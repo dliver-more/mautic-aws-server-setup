@@ -24,6 +24,8 @@ MAUTIC_VERSION="5.2.1"
 PHP_VERSION="8.2"
 MARIADB_VERSION="11.4"
 
+TIMEZONE="UTC"  # Default timezone, can be customized
+
 ### Helper Functions ###
 function pause_for_credentials {
     echo "\nGenerated credentials:"
@@ -117,7 +119,11 @@ function install_dependencies {
     apt update && apt upgrade -y
     apt install -y software-properties-common curl unzip apache2 mariadb-server \
                    php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap} \
-                   certbot python3-certbot-apache
+                   certbot python3-certbot-apache netdata
+
+    # Enable Netdata
+    systemctl start netdata
+    systemctl enable netdata
 
     LC_ALL=C.UTF-8 add-apt-repository ppa:ondrej/php -y
     curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | bash -s -- --mariadb-server-version=$MARIADB_VERSION
@@ -156,6 +162,42 @@ function setup_ssl {
     certbot --apache -d $MAUTIC_DOMAIN -d www.$MAUTIC_DOMAIN --non-interactive --agree-tos --email $CERTBOT_EMAIL --no-redirect
 }
 
+function configure_timezone {
+    echo "Configuring server timezone..."
+    timedatectl set-timezone $TIMEZONE
+}
+
+function configure_firewall {
+    echo "Configuring UFW firewall..."
+    apt install ufw -y
+    ufw allow OpenSSH
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    ufw enable
+}
+
+function setup_cron_jobs {
+    echo "Setting up cron jobs for database backups..."
+
+    # Backup database daily and keep last 7 backups
+    mkdir -p /var/backups/mautic_db
+    echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" > /etc/cron.d/mautic-backups
+    chmod 644 /etc/cron.d/mautic-backups
+    systemctl restart cron
+}
+
+function display_post_installation_notes {
+    echo "\nMautic installation is complete! Here are the details:"
+    echo "URL: https://$MAUTIC_DOMAIN"
+    echo "Admin Username: $MAUTIC_ADMIN_USER"
+    echo "Admin Password: $MAUTIC_ADMIN_PASSWORD"
+    echo "MySQL Root Password: $MYSQL_ROOT_PASSWORD"
+    echo "Mautic Database Username: $MYSQL_MAUTIC_USER"
+    echo "Mautic Database Password: $MYSQL_MAUTIC_PASSWORD"
+    echo "\nMonitoring enabled with Netdata. Access it at http://<server-ip>:19999"
+    echo "\nPlease save these details securely."
+}
+
 ### Main Execution ###
 pause_for_credentials
 check_requirements
@@ -164,5 +206,9 @@ configure_apache
 configure_mariadb
 install_mautic
 setup_ssl
+configure_timezone
+configure_firewall
+setup_cron_jobs
+display_post_installation_notes
 
-echo "\nMautic installation completed. Visit https://$MAUTIC_DOMAIN to finalize the setup."
+echo "\nMautic setup is complete!"
