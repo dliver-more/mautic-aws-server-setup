@@ -1,13 +1,20 @@
-# mautic-aws-server-setup
-This is a setup guide for Mautic on AWS
-
 # Mautic 5 AWS EC2 Setup Script
+
+## Table of Contents
+- [Purpose](#purpose)
+- [What is Mautic?](#what-is-mautic)
+- [What You Get](#what-you-get)
+- [Prerequisites](#prerequisites)
+- [Usage](#usage)
+- [License](#license)
 
 ## Purpose
 This repository contains a shell script and detailed setup instructions to automate the installation and configuration of **Mautic 5** on an AWS EC2 instance running **Ubuntu 24.04**. The goal is to simplify the deployment process and provide a reusable solution for others setting up Mautic in a cloud environment.
 
 ## What is Mautic?
 Mautic is an open-source marketing automation platform that allows businesses to manage email campaigns, create landing pages, track user behavior, and much more. It is a powerful tool for marketers looking to automate their workflows and improve user engagement.
+
+[Learn more about Mautic here.](https://www.mautic.org)
 
 Key Features:
 - Dynamic email content and personalized campaigns.
@@ -20,6 +27,12 @@ Use Cases:
 - Customer journey automation.
 - Lead management and tracking.
 - API-driven marketing workflows.
+
+## What You Get
+After running the provided script, you will have:
+- An AWS EC2 server set up with **Mautic 5.2.1** and its admin panel.
+- Configured to use **PHP 8.2**, **MariaDB 11.4**, and **Apache 2**.
+- A fully functional and secure environment ready for Mautic usage and customization.
 
 ## Prerequisites
 Before running the shell script, ensure the following preparatory steps are completed:
@@ -62,24 +75,42 @@ Define and attach appropriate security rules:
 ## Usage
 1. Clone this repository to your local machine:
    ```bash
-   git clone https://github.com/yourusername/mautic-aws-setup.git
-   cd mautic-aws-setup
+   git clone https://github.com/dliver-more/mautic-aws-server-setup.git
+   cd mautic-aws-server-setup
    ```
 
-2. Edit the shell script to customize any domain-specific or configuration-specific details.
+2. Edit the shell script to customize any domain-specific or configuration-specific details. These are in the "Variables" section of the script.
 
-3. SSH into your AWS EC2 instance and copy the script:
-   ```bash
-   scp setup_mautic.sh ubuntu@<your-ec2-ip>:/home/ubuntu/
-   ```
+3. SSH into your AWS EC2 instance:
+   - Use the following command to connect to your instance via SSH:
+     ```bash
+     ssh -i /path/to/your-private-key.pem ubuntu@<your-ec2-ip>
+     ```
+   - Replace `/path/to/your-private-key.pem` with the path to your SSH private key.
+   - Replace `<your-ec2-ip>` with the public IP address of your EC2 instance.
+   - Ensure your key permissions are secure (e.g., `chmod 400 /path/to/your-private-key.pem`).
 
-4. Run the script:
+4. Copy the script to your server or create a file and transfer the script contents:
+   - **Option 1: Copy the script using `scp`**:
+     ```bash
+     scp setup_mautic.sh ubuntu@<your-ec2-ip>:/home/ubuntu/
+     ```
+     - Replace `<your-ec2-ip>` with the public IP address of your EC2 instance.
+   
+   - **Option 2: Create the script file directly on the server**:
+     1. Create a new file using a text editor, such as `nano`:
+        ```bash
+        nano setup_mautic.sh
+        ```
+     2. Copy the contents of `setup_mautic.sh` from your local machine.
+     3. Paste the contents into the file by right-clicking in the terminal or using your clipboard paste command.
+     4. Save and exit the editor (e.g., in `nano`, press `CTRL+O` to save and `CTRL+X` to exit).
+
+5. Run the script:
    ```bash
    chmod +x setup_mautic.sh
    ./setup_mautic.sh
    ```
-
-5. Follow any additional prompts or configurations detailed in the script.
 
 ## License
 This repository is open-source and available under the MIT License. Feel free to fork, contribute, or modify as needed.
