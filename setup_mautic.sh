@@ -113,30 +113,45 @@ EOF"
 
     sudo a2ensite mautic.conf
     sudo a2enmod rewrite
-    sudo systemctl reload apache2
+    sudo apachectl configtest
+    sudo systemctl restart apache2
 }
 
 function install_dependencies {
     echo "Updating and installing dependencies..."
 
     sudo apt update && sudo apt upgrade -y
-    sudo apt install -y software-properties-common curl unzip apache2 mariadb-server \
-                   snapd php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap}
 
-    # Enable Snap and Certbot
-    sudo snap install core && sudo snap refresh core
+    # Add PHP repository for 8.2
+    sudo add-apt-repository ppa:ondrej/php -y
+    sudo apt update
+
+    # Install PHP, MariaDB, and other necessary tools
+    sudo apt install -y mariadb-server mariadb-client apache2 snapd \
+                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap} \
+                   curl unzip software-properties-common
+
+    # Install and link Certbot
     sudo snap install --classic certbot
     sudo ln -s /snap/bin/certbot /usr/bin/certbot
+
+    # Ensure necessary directories exist
+    sudo mkdir -p /var/www/html
+    sudo chown -R www-data:www-data /var/www/html
+    sudo chmod -R 755 /var/www/html
 }
 
 function configure_mariadb {
     echo "Configuring MariaDB..."
 
-    sudo mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
-    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE mautic CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
-    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER '$MYSQL_MAUTIC_USER'@'localhost' IDENTIFIED BY '$MYSQL_MAUTIC_PASSWORD';"
-    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "GRANT ALL PRIVILEGES ON mautic.* TO '$MYSQL_MAUTIC_USER'@'localhost';"
-    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
+    sudo systemctl start mariadb
+    sudo systemctl enable mariadb
+
+    sudo mariadb -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
+    sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE mautic CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
+    sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER '$MYSQL_MAUTIC_USER'@'localhost' IDENTIFIED BY '$MYSQL_MAUTIC_PASSWORD';"
+    sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "GRANT ALL PRIVILEGES ON mautic.* TO '$MYSQL_MAUTIC_USER'@'localhost';"
+    sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 }
 
 function install_mautic {
@@ -193,7 +208,6 @@ function display_post_installation_notes {
     echo "MySQL Root Password: $MYSQL_ROOT_PASSWORD"
     echo "Mautic Database Username: $MYSQL_MAUTIC_USER"
     echo "Mautic Database Password: $MYSQL_MAUTIC_PASSWORD"
-    echo "\nMonitoring enabled with Netdata. Access it at http://<server-ip>:19999"
     echo "\nPlease save these details securely."
 }
 
@@ -203,3 +217,7 @@ check_requirements
 install_dependencies
 configure_apache
 configure_mariadb
+install_mautic
+setup_ssl
+configure_timezone
+configure_fire
