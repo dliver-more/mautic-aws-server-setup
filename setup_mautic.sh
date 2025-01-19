@@ -26,6 +26,13 @@ MARIADB_VERSION="11.4"
 
 TIMEZONE="UTC"  # Default timezone, can be customized
 
+## Variables Check
+# Ensure critical variables are set
+if [[ -z "$MAUTIC_DOMAIN" || -z "$CERTBOT_EMAIL" ]]; then
+    echo "Error: MAUTIC_DOMAIN or CERTBOT_EMAIL is not set. Please set these variables and re-run the script."
+    exit 1
+fi
+
 ### Helper Functions ###
 function pause_for_credentials {
     echo "\nGenerated credentials:"
@@ -128,7 +135,7 @@ function install_dependencies {
 
     # Install PHP, MariaDB, and other necessary tools
     sudo apt install -y mariadb-server mariadb-client apache2 snapd \
-                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap} \
+                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap,imap,mysql} \
                    curl unzip software-properties-common
 
     # Install and link Certbot
@@ -139,6 +146,9 @@ function install_dependencies {
     sudo mkdir -p /var/www/html
     sudo chown -R www-data:www-data /var/www/html
     sudo chmod -R 755 /var/www/html
+
+    # Update PHP memory limit
+    sudo sed -i 's/memory_limit = .*/memory_limit = 512M/' /etc/php/$PHP_VERSION/apache2/php.ini
 }
 
 function configure_mariadb {
@@ -163,16 +173,22 @@ function install_mautic {
     sudo chown -R www-data:www-data /var/www/html
     sudo chmod -R 755 /var/www/html
 
-    # Create default admin user
-    sudo -u www-data php /var/www/html/bin/console mautic:admin:create \
-        --username=$MAUTIC_ADMIN_USER \
-        --password=$MAUTIC_ADMIN_PASSWORD \
-        --email=$CERTBOT_EMAIL
+    # Initialize Mautic database schema and create admin user
+    sudo -u www-data php /var/www/html/bin/console mautic:install --env=prod \
+        --db_driver=pdo_mysql \
+        --db_host=localhost \
+        --db_port=3306 \
+        --db_name=mautic \
+        --db_user=$MYSQL_MAUTIC_USER \
+        --db_password=$MYSQL_MAUTIC_PASSWORD \
+        --admin_username=$MAUTIC_ADMIN_USER \
+        --admin_password=$MAUTIC_ADMIN_PASSWORD \
+        --admin_email=$CERTBOT_EMAIL \
+        https://$MAUTIC_DOMAIN
 }
 
 function setup_ssl {
     echo "Setting up SSL with Certbot..."
-
     sudo certbot --apache -d $MAUTIC_DOMAIN -d www.$MAUTIC_DOMAIN --non-interactive --agree-tos --email $CERTBOT_EMAIL --no-redirect
 }
 
@@ -220,4 +236,6 @@ configure_mariadb
 install_mautic
 setup_ssl
 configure_timezone
-configure_fire
+configure_firewall
+setup_cron_jobs
+display_post_installation_notes
