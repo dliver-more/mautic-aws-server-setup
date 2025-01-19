@@ -86,8 +86,11 @@ function check_requirements {
 function configure_apache {
     echo "Configuring Apache..."
 
+    # Ensure Apache is installed
+    sudo apt install apache2 -y
+
     # Create Virtual Host Configuration
-    cat <<EOF > /etc/apache2/sites-available/mautic.conf
+    sudo bash -c "cat <<EOF > /etc/apache2/sites-available/mautic.conf
 <VirtualHost *:80>
     ServerName $MAUTIC_DOMAIN
     ServerAlias www.$MAUTIC_DOMAIN
@@ -106,48 +109,44 @@ function configure_apache {
     RewriteCond %{HTTPS} !=on
     RewriteRule ^/?(.*) https://%{SERVER_NAME}/$1 [R,L]
 </VirtualHost>
-EOF
+EOF"
 
-    a2ensite mautic.conf
-    a2enmod rewrite
-    systemctl reload apache2
+    sudo a2ensite mautic.conf
+    sudo a2enmod rewrite
+    sudo systemctl reload apache2
 }
 
 function install_dependencies {
     echo "Updating and installing dependencies..."
 
-    apt update && apt upgrade -y
-    apt install -y software-properties-common curl unzip apache2 mariadb-server \
-                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap} \
-                   certbot python3-certbot-apache netdata
+    sudo apt update && sudo apt upgrade -y
+    sudo apt install -y software-properties-common curl unzip apache2 mariadb-server \
+                   snapd php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap}
 
-    # Enable Netdata
-    systemctl start netdata
-    systemctl enable netdata
-
-    LC_ALL=C.UTF-8 add-apt-repository ppa:ondrej/php -y
-    curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | bash -s -- --mariadb-server-version=$MARIADB_VERSION
-    apt update && apt install -y mariadb-server
+    # Enable Snap and Certbot
+    sudo snap install core && sudo snap refresh core
+    sudo snap install --classic certbot
+    sudo ln -s /snap/bin/certbot /usr/bin/certbot
 }
 
 function configure_mariadb {
     echo "Configuring MariaDB..."
 
-    mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
-    mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE mautic CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
-    mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER '$MYSQL_MAUTIC_USER'@'localhost' IDENTIFIED BY '$MYSQL_MAUTIC_PASSWORD';"
-    mysql -u root -p$MYSQL_ROOT_PASSWORD -e "GRANT ALL PRIVILEGES ON mautic.* TO '$MYSQL_MAUTIC_USER'@'localhost';"
-    mysql -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
+    sudo mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
+    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE mautic CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
+    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER '$MYSQL_MAUTIC_USER'@'localhost' IDENTIFIED BY '$MYSQL_MAUTIC_PASSWORD';"
+    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "GRANT ALL PRIVILEGES ON mautic.* TO '$MYSQL_MAUTIC_USER'@'localhost';"
+    sudo mysql -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 }
 
 function install_mautic {
     echo "Installing Mautic..."
 
-    wget -q https://github.com/mautic/mautic/releases/download/$MAUTIC_VERSION/$MAUTIC_VERSION.zip
-    unzip -q $MAUTIC_VERSION.zip -d /var/www/html
-    rm $MAUTIC_VERSION.zip
-    chown -R www-data:www-data /var/www/html
-    chmod -R 755 /var/www/html
+    sudo wget -q https://github.com/mautic/mautic/releases/download/$MAUTIC_VERSION/$MAUTIC_VERSION.zip
+    sudo unzip -q $MAUTIC_VERSION.zip -d /var/www/html
+    sudo rm $MAUTIC_VERSION.zip
+    sudo chown -R www-data:www-data /var/www/html
+    sudo chmod -R 755 /var/www/html
 
     # Create default admin user
     sudo -u www-data php /var/www/html/bin/console mautic:admin:create \
@@ -159,31 +158,31 @@ function install_mautic {
 function setup_ssl {
     echo "Setting up SSL with Certbot..."
 
-    certbot --apache -d $MAUTIC_DOMAIN -d www.$MAUTIC_DOMAIN --non-interactive --agree-tos --email $CERTBOT_EMAIL --no-redirect
+    sudo certbot --apache -d $MAUTIC_DOMAIN -d www.$MAUTIC_DOMAIN --non-interactive --agree-tos --email $CERTBOT_EMAIL --no-redirect
 }
 
 function configure_timezone {
     echo "Configuring server timezone..."
-    timedatectl set-timezone $TIMEZONE
+    sudo timedatectl set-timezone $TIMEZONE
 }
 
 function configure_firewall {
     echo "Configuring UFW firewall..."
-    apt install ufw -y
-    ufw allow OpenSSH
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    ufw enable
+    sudo apt install ufw -y
+    sudo ufw allow OpenSSH
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+    sudo ufw enable
 }
 
 function setup_cron_jobs {
     echo "Setting up cron jobs for database backups..."
 
     # Backup database daily and keep last 7 backups
-    mkdir -p /var/backups/mautic_db
-    echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" > /etc/cron.d/mautic-backups
-    chmod 644 /etc/cron.d/mautic-backups
-    systemctl restart cron
+    sudo mkdir -p /var/backups/mautic_db
+    echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" | sudo tee /etc/cron.d/mautic-backups > /dev/null
+    sudo chmod 644 /etc/cron.d/mautic-backups
+    sudo systemctl restart cron
 }
 
 function display_post_installation_notes {
@@ -204,11 +203,3 @@ check_requirements
 install_dependencies
 configure_apache
 configure_mariadb
-install_mautic
-setup_ssl
-configure_timezone
-configure_firewall
-setup_cron_jobs
-display_post_installation_notes
-
-echo "\nMautic setup is complete!"
