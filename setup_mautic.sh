@@ -1,35 +1,55 @@
 #!/bin/bash
 
 ###-----------------------------------###
-### Fully Automatic Mautic 5.2.1 Installer ###
+### Mautic 5.2.1 on AWS EC2 Installer ###
 ###-----------------------------------###
 #
 # This script installs Mautic 5.2.1 on Ubuntu 24.04 in an AWS EC2 instance.
-# It configures Apache 2, PHP 8.2, MariaDB 11.4, Snap, Certbot, and enables SSL.
-#
+# It configures Apache 2, PHP 8.2, MariaDB 10.11, Snap, Certbot, and enables SSL.
 # Optimized for a clean and secure setup.
+#
+## Prerequisites
+# Before initiating this script, follow the prerequisite steps detailed in the README.md file.
 
 ### Variables ###
-MAUTIC_DOMAIN=""  # Domain for the Mautic instance
-CERTBOT_EMAIL=""  # Email for Let's Encrypt notifications
+# Some variables are optional and others are required. 
 
-MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)  # Secure root password
-MYSQL_MAUTIC_USER="mautic_user"
-MYSQL_MAUTIC_PASSWORD=$(openssl rand -base64 32)  # Secure Mautic user password
+# General
+MAUTIC_DOMAIN=""  # Domain for the Mautic instance and SSL (Required)
+CERTBOT_EMAIL=""  # Email for Let's Encrypt notifications (Required)
+TIMEZONE="UTC"  # Default timezone (Optional, defaults to UTC). Run 'timedatectl list-timezones' for options.
 
-MAUTIC_ADMIN_USER="admin"  # Default Mautic admin username
-MAUTIC_ADMIN_PASSWORD=$(openssl rand -base64 16)  # Secure admin password
+# Database
+MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)  # Secure root password (Required)
+MYSQL_MAUTIC_USER="mautic_user"  # Mautic database username (Required)
+MYSQL_MAUTIC_PASSWORD=$(openssl rand -base64 32)  # Secure Mautic user password (Required)
 
-MAUTIC_VERSION="5.2.1"
-PHP_VERSION="8.2"
-MARIADB_VERSION="11.4"
+# Mautic Admin
+MAUTIC_ADMIN_EMAIL=""  # Admin email (Required)
+MAUTIC_ADMIN_USER="admin"  # Admin username (Required, default is "admin")
+MAUTIC_ADMIN_PASSWORD=$(openssl rand -base64 16)  # Secure admin password (Required)
+MAUTIC_ADMIN_FIRSTNAME=${MAUTIC_ADMIN_FIRSTNAME:-null}  # Admin first name (Optional)
+MAUTIC_ADMIN_LASTNAME=${MAUTIC_ADMIN_LASTNAME:-null}  # Admin last name (Optional)
 
-TIMEZONE="UTC"  # Default timezone, can be customized
+# Email Settings
+EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-null}  # Default email "from" address (Optional)
+EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-null}  # Default email "from" name (Optional)
+
+# SMTP Settings (Optional, all or none must be set)
+SMTP_HOST=${SMTP_HOST:-null}  # SMTP server host (Optional)
+SMTP_PORT=${SMTP_PORT:-null}  # SMTP server port (Optional)
+SMTP_USERNAME=${SMTP_USERNAME:-null}  # SMTP username (Optional)
+SMTP_PASSWORD=${SMTP_PASSWORD:-null}  # SMTP password (Optional)
+
+# Versions. Changing these may break the installation.
+MAUTIC_VERSION="5.2.1"  # Mautic version (Required)
+PHP_VERSION="8.2"  # PHP version (Required)
+MARIADB_VERSION="10.11"  # MariaDB version (Required)
 
 ## Variables Check
-# Ensure critical variables are set
-if [[ -z "$MAUTIC_DOMAIN" || -z "$CERTBOT_EMAIL" ]]; then
-    echo "Error: MAUTIC_DOMAIN or CERTBOT_EMAIL is not set. Please set these variables and re-run the script."
+# Ensure required variables are set
+if [[ -z "$MAUTIC_DOMAIN" || -z "$CERTBOT_EMAIL" || -z "$MAUTIC_ADMIN_EMAIL" ]]; then
+    echo "Error: One or more required variables are not set. Please set them and re-run the script."
     exit 1
 fi
 
@@ -184,7 +204,30 @@ function install_mautic {
         --admin_username=$MAUTIC_ADMIN_USER \
         --admin_password=$MAUTIC_ADMIN_PASSWORD \
         --admin_email=$CERTBOT_EMAIL \
+        --admin_firstname=$MAUTIC_ADMIN_FIRSTNAME \
+        --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
+        --mailer_from_name=$EMAIL_FROM_EMAIL \
+        --mailer_from_email=$EMAIL_FROM_NAME \
+        --mailer_host=$SMTP_HOST \
+        --mailer_port=$SMTP_PORT \
+        --mailer_user=$SMTP_USERNAME \
+        --mailer_password=$SMTP_PASSWORD \
         https://$MAUTIC_DOMAIN
+
+    # Sync Doctrine metadata storage
+    echo "Synchronizing Doctrine metadata storage..."
+    sudo -u www-data php
+    # Sync Doctrine metadata storage
+    echo "Synchronizing Doctrine metadata storage..."
+    sudo -u www-data php /var/www/html/bin/console doctrine:migrations:sync-metadata-storage
+
+    # Run pending migrations
+    echo "Running pending migrations..."
+    sudo -u www-data php /var/www/html/bin/console doctrine:migrations:migrate --no-interaction
+
+    # Validate the database schema
+    echo "Validating database schema..."
+    sudo -u www-data php /var/www/html/bin/console doctrine:schema:validate
 }
 
 function setup_ssl {
@@ -216,18 +259,15 @@ function setup_cron_jobs {
     sudo systemctl restart cron
 }
 
-function display_post_installation_notes {
-    echo "\nMautic installation is complete! Here are the details:"
-    echo "URL: https://$MAUTIC_DOMAIN"
-    echo "Admin Username: $MAUTIC_ADMIN_USER"
-    echo "Admin Password: $MAUTIC_ADMIN_PASSWORD"
-    echo "MySQL Root Password: $MYSQL_ROOT_PASSWORD"
-    echo "Mautic Database Username: $MYSQL_MAUTIC_USER"
-    echo "Mautic Database Password: $MYSQL_MAUTIC_PASSWORD"
-    echo "\nPlease save these details securely."
+function finalize_installation {
+    echo "Finalizing installation..."
+    
+    # Restart services to apply changes
+    sudo systemctl restart apache2
+    sudo systemctl restart mariadb
 }
 
-### Main Execution ###
+### Main Script Execution ###
 pause_for_credentials
 check_requirements
 install_dependencies
@@ -238,4 +278,7 @@ setup_ssl
 configure_timezone
 configure_firewall
 setup_cron_jobs
-display_post_installation_notes
+finalize_installation
+
+echo "Installation completed successfully!"
+echo "Access Mautic at: https://$MAUTIC_DOMAIN"
