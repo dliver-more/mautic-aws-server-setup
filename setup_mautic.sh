@@ -31,16 +31,6 @@ MAUTIC_ADMIN_PASSWORD=$(openssl rand -base64 16)  # Secure admin password (Requi
 MAUTIC_ADMIN_FIRSTNAME=${MAUTIC_ADMIN_FIRSTNAME:-null}  # Admin first name (Optional)
 MAUTIC_ADMIN_LASTNAME=${MAUTIC_ADMIN_LASTNAME:-null}  # Admin last name (Optional)
 
-# Email Settings
-EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-null}  # Default email "from" address (Optional)
-EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-null}  # Default email "from" name (Optional)
-
-# SMTP Settings (Optional, all or none must be set)
-SMTP_HOST=${SMTP_HOST:-null}  # SMTP server host (Optional)
-SMTP_PORT=${SMTP_PORT:-null}  # SMTP server port (Optional)
-SMTP_USERNAME=${SMTP_USERNAME:-null}  # SMTP username (Optional)
-SMTP_PASSWORD=${SMTP_PASSWORD:-null}  # SMTP password (Optional)
-
 # Versions. Changing these may break the installation.
 MAUTIC_VERSION="5.2.1"  # Mautic version (Required)
 PHP_VERSION="8.2"  # PHP version (Required)
@@ -203,31 +193,10 @@ function install_mautic {
         --db_password=$MYSQL_MAUTIC_PASSWORD \
         --admin_username=$MAUTIC_ADMIN_USER \
         --admin_password=$MAUTIC_ADMIN_PASSWORD \
-        --admin_email=$CERTBOT_EMAIL \
+        --admin_email=$MAUTIC_ADMIN_EMAIL \
         --admin_firstname=$MAUTIC_ADMIN_FIRSTNAME \
         --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
-        --mailer_from_name=$EMAIL_FROM_EMAIL \
-        --mailer_from_email=$EMAIL_FROM_NAME \
-        --mailer_host=$SMTP_HOST \
-        --mailer_port=$SMTP_PORT \
-        --mailer_user=$SMTP_USERNAME \
-        --mailer_password=$SMTP_PASSWORD \
         https://$MAUTIC_DOMAIN
-
-    # Sync Doctrine metadata storage
-    echo "Synchronizing Doctrine metadata storage..."
-    sudo -u www-data php
-    # Sync Doctrine metadata storage
-    echo "Synchronizing Doctrine metadata storage..."
-    sudo -u www-data php /var/www/html/bin/console doctrine:migrations:sync-metadata-storage
-
-    # Run pending migrations
-    echo "Running pending migrations..."
-    sudo -u www-data php /var/www/html/bin/console doctrine:migrations:migrate --no-interaction
-
-    # Validate the database schema
-    echo "Validating database schema..."
-    sudo -u www-data php /var/www/html/bin/console doctrine:schema:validate
 }
 
 function setup_ssl {

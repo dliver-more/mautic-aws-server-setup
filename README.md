@@ -53,6 +53,7 @@ Define and attach appropriate security rules:
    - Restrict access to your IP or a small set of known IPs.
 2. **Frontend Access**:
    - Open ports 80 (HTTP) and 443 (HTTPS) for admin and API usage.
+   - During installation of SSL, public server access is required. **After installation this access should be removed**
    - Restrict access to authorized IPs if it’s a private setup.
 3. **API Access**:
    - Allow inbound traffic on port 443 from the mobile application server or other clients using the Mautic API.
@@ -203,6 +204,10 @@ Below is a list of variables used in the script, their purposes, and whether the
    chmod +x setup_mautic.sh
    ./setup_mautic.sh
    ```
+
+6. Update Security Groups:
+   - After completion of setup, optionally update the security groups to remove the public access to ports 80/443
+
 
 ## License
 This repository is open-source and available under the MIT License. Feel free to fork, contribute, or modify as needed.
