@@ -15,8 +15,8 @@
 # Some variables are optional and others are required. 
 
 # General
-MAUTIC_DOMAIN=""  # Domain for the Mautic instance and SSL (Required)
-CERTBOT_EMAIL=""  # Email for Let's Encrypt notifications (Required)
+MAUTIC_DOMAIN="mautic3.onpointhunts.com"  # Domain for the Mautic instance and SSL (Required)
+CERTBOT_EMAIL="ssl@onpointhunts.com"  # Email for Let's Encrypt notifications (Required)
 TIMEZONE="UTC"  # Default timezone (Optional, defaults to UTC). Run 'timedatectl list-timezones' for options.
 
 # Database
@@ -25,11 +25,11 @@ MYSQL_MAUTIC_USER="mautic_user"  # Mautic database username (Required)
 MYSQL_MAUTIC_PASSWORD=$(openssl rand -base64 32)  # Secure Mautic user password (Required)
 
 # Mautic Admin
-MAUTIC_ADMIN_EMAIL=""  # Admin email (Required)
+MAUTIC_ADMIN_EMAIL="danny@onpointhunts.com"  # Admin email (Required)
 MAUTIC_ADMIN_USER="admin"  # Admin username (Required, default is "admin")
 MAUTIC_ADMIN_PASSWORD=$(openssl rand -base64 16)  # Secure admin password (Required)
-MAUTIC_ADMIN_FIRSTNAME=${MAUTIC_ADMIN_FIRSTNAME:-null}  # Admin first name (Optional)
-MAUTIC_ADMIN_LASTNAME=${MAUTIC_ADMIN_LASTNAME:-null}  # Admin last name (Optional)
+MAUTIC_ADMIN_FIRSTNAME="Danny"  # Admin first name (Optional)
+MAUTIC_ADMIN_LASTNAME="Livermore"  # Admin last name (Optional)
 
 # Versions. Changing these may break the installation.
 MAUTIC_VERSION="5.2.1"  # Mautic version (Required)
@@ -112,9 +112,9 @@ function configure_apache {
 <VirtualHost *:80>
     ServerName $MAUTIC_DOMAIN
     ServerAlias www.$MAUTIC_DOMAIN
-    DocumentRoot /var/www/html
+    DocumentRoot /var/www/html/mautic/docroot
 
-    <Directory /var/www/html>
+    <Directory /var/www/html/mautic/docroot>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
@@ -184,30 +184,74 @@ function configure_mariadb {
     sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 }
 
-function install_mautic {
-    echo "Installing Mautic..."
+function install_composer {
+    # Composer for PHP
+    echo "Installing Composer and required dependencies... ======================================================================================================"
+    sudo apt install composer
 
-    sudo wget -q https://github.com/mautic/mautic/releases/download/$MAUTIC_VERSION/$MAUTIC_VERSION.zip
-    sudo unzip -q $MAUTIC_VERSION.zip -d /var/www/html
-    sudo rm $MAUTIC_VERSION.zip
-    sudo chown -R www-data:www-data /var/www/html
-    sudo chmod -R 755 /var/www/html
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - # Problems with this
+    sudo apt install -y nodejs
+    sudo apt install npm
+    npx update-browserslist-db@latest
 
-    # Initialize Mautic database schema and create admin user
-    sudo -u www-data php /var/www/html/bin/console mautic:install --env=prod \
-        --db_driver=pdo_mysql \
-        --db_host=localhost \
-        --db_port=3306 \
-        --db_name=mautic \
-        --db_user=$MYSQL_MAUTIC_USER \
-        --db_password=$MYSQL_MAUTIC_PASSWORD \
-        --admin_username=$MAUTIC_ADMIN_USER \
-        --admin_password=$MAUTIC_ADMIN_PASSWORD \
-        --admin_email=$MAUTIC_ADMIN_EMAIL \
-        --admin_firstname=$MAUTIC_ADMIN_FIRSTNAME \
-        --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
-        https://$MAUTIC_DOMAIN
+    # Install dependencies via Composer
+    # sudo -u www-data composer install --no-dev --optimize-autoloader
+    # composer require pabloveintimilla/mautic-amazon-ses
+
+    # # Ensure proper permissions
+    # sudo chown -R www-data:www-data /var/www/html
+    # sudo find /var/www/html -type d -exec chmod 755 {} \;
+    # sudo find /var/www/html -type f -exec chmod 644 {} \;
 }
+
+function install_mautic {
+    echo "Installing Mautic... ======================================================================================================"
+    
+    sudo rm -rf /var/www/html/*
+    cd /var/www/html
+    
+    sudo composer create-project mautic/recommended-project:^5.0 mautic --no-interaction # Not supposed to run as root...
+    # Fails here. Appears to be npm related
+    cd mautic/docroot
+
+    sudo chown -R www-data:www-data /var/www/html/mautic/
+    sudo chmod -R 755 /var/www/html/mautic/
+    sudo service apache2 reload # Why sudo??
+
+    cd /var/www/html/mautic
+    sudo composer require symfony/amazon-mailer # Not supposed to run as sudo...
+    # Gets stuck again here. Again from node?
+    sudo chown -R www-data:www-data /var/www/html/mautic/
+    sudo chmod -R 755 /var/www/html/mautic/
+    
+
+    # sudo wget -q https://github.com/mautic/mautic/releases/download/$MAUTIC_VERSION/$MAUTIC_VERSION.zip
+    # sudo unzip -q $MAUTIC_VERSION.zip -d /var/www/html
+    # sudo rm $MAUTIC_VERSION.zip
+    # sudo chown -R www-data:www-data /var/www/html
+    # sudo chmod -R 755 /var/www/html
+
+    # # Initialize Mautic database schema and create admin user
+    # sudo -u www-data php /var/www/html/bin/console mautic:install --env=prod \
+    #     --db_driver=pdo_mysql \
+    #     --db_host=localhost \
+    #     --db_port=3306 \
+    #     --db_name=mautic \
+    #     --db_user=$MYSQL_MAUTIC_USER \
+    #     --db_password=$MYSQL_MAUTIC_PASSWORD \
+    #     --admin_username=$MAUTIC_ADMIN_USER \
+    #     --admin_password=$MAUTIC_ADMIN_PASSWORD \
+    #     --admin_email=$MAUTIC_ADMIN_EMAIL \
+    #     --admin_firstname=$MAUTIC_ADMIN_FIRSTNAME \
+    #     --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
+    #     https://$MAUTIC_DOMAIN
+}
+
+# function install_packages {
+#     cd /var/www/html/plugins
+#     sudo git clone https://github.com/pm-pmaas/etailors_amazon_ses.git AmazonSesBundle
+#     sudo php /var/www/html/bin/console cache:clear
+# } 
 
 function configure_timezone {
     echo "Configuring server timezone... ======================================================================================================"
@@ -226,12 +270,12 @@ function configure_firewall {
 # function setup_cron_jobs {
 #     echo "Setting up cron jobs for database backups...======================================================================================================"
 
-    # Backup database daily and keep last 7 backups
-    sudo mkdir -p /var/backups/mautic_db
-    echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" | sudo tee /etc/cron.d/mautic-backups > /dev/null
-    sudo chmod 644 /etc/cron.d/mautic-backups
-    sudo systemctl restart cron
-}
+#     # Backup database daily and keep last 7 backups
+#     sudo mkdir -p /var/backups/mautic_db
+#     echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" | sudo tee /etc/cron.d/mautic-backups > /dev/null
+#     sudo chmod 644 /etc/cron.d/mautic-backups
+#     sudo systemctl restart cron
+# }
 
 function finalize_installation {
     echo "Finalizing installation..."
@@ -248,10 +292,14 @@ install_dependencies
 configure_apache
 setup_ssl
 configure_mariadb
+install_composer
+
 install_mautic
+# install_packages
+
 configure_timezone
 configure_firewall
-setup_cron_jobs
+# setup_cron_jobs
 finalize_installation
 
 echo "Installation completed successfully!"
