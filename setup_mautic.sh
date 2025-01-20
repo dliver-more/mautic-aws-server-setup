@@ -1,5 +1,7 @@
 #!/bin/bash
-
+# ToDo: Fix timzeone issue
+# ToDo: set mautid db on variable
+# ToDo: Let users choose which aws plugin(s) to use
 ###-----------------------------------###
 ### Mautic 5.2.1 on AWS EC2 Installer ###
 ###-----------------------------------###
@@ -18,6 +20,7 @@
 MAUTIC_DOMAIN=""  # Domain for the Mautic instance and SSL (Required)
 CERTBOT_EMAIL=""  # Email for Let's Encrypt notifications (Required)
 TIMEZONE="UTC"  # Default timezone (Optional, defaults to UTC). Run 'timedatectl list-timezones' for options.
+DOC_ROOT="/var/www/html" # Document Root (Required)
 
 # Database
 MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)  # Secure root password (Required)
@@ -187,25 +190,32 @@ function configure_mariadb {
 
 function install_package_managers {
     echo "Installing Composer and NPM ======================================================================================================"
-    # sudo apt install composer
-    ## Install Composer
-    cd ~
+
+    # Install Composer
     curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
     HASH=`curl -sS https://composer.github.io/installer.sig`
     php -r "if (hash_file('SHA384', '/tmp/composer-setup.php') === '$HASH') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
     sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
 
-    ## Install Node/NPM
+    # Remove any existing Node.js/npm
     sudo apt remove -y nodejs npm
     sudo apt purge -y nodejs npm
     sudo apt autoremove -y
 
-    # Add NodeSource repository for Node.js 20
+    # Install Node.js and npm
     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-
-    # Install Node.js (npm will be installed automatically)
+    sudo apt update
     sudo apt install -y nodejs
     sudo npm install -g npm@latest
+
+    # Clean npm cache
+    sudo -u www-data npm cache clean --force    
+}
+
+function configure_timezone {
+    echo "Configuring server timezone ======================================================================================================"
+    sudo timedatectl set-timezone $TIMEZONE
+    # sudo dpkg-reconfigure tzdata
 }
 
 function install_mautic {
@@ -215,17 +225,29 @@ function install_mautic {
     sudo unzip -q $MAUTIC_VERSION.zip -d $DOC_ROOT
     sudo rm $MAUTIC_VERSION.zip
 
-    sudo -u www-data php /var/www/html/bin/console cache:clear --env=prod
+    sudo chown -R www-data:www-data $DOC_ROOT
+    sudo chmod -R 755 $DOC_ROOT
     
-    sudo chown -R www-data:www-data $DOC_ROOT
-    sudo chmod -R 755 $DOC_ROOT
+    # Fix directory ownership. TODO - this assumes DOC_ROOT is /var/www/html
+    # Fix npm cache directory ownership and permissions
+    sudo mkdir -p /var/www/.npm
+    sudo chown -R www-data:www-data /var/www/.npm
+    sudo chmod -R 775 /var/www/.npm
+    # Fix node_modules cache directory ownership and permissions
+    sudo mkdir -p $DOC_ROOT/node_modules
+    sudo chown -R www-data:www-data $DOC_ROOT/node_modules
+    sudo chmod -R 775 $DOC_ROOT/node_modules
+    # Fix Composer cache directory ownership and permissions
+    sudo mkdir -p /var/www/.cache/composer/files
+    sudo chown -R www-data:www-data /var/www/.cache
+    sudo chmod -R 775 /var/www/.cache
 
+    # Composer install
     cd $DOC_ROOT
-    sudo -u www-data composer install # Requires sudo???
+    sudo -u www-data composer install --no-dev --optimize-autoloader
 
-    # Probably not required if we do it without sudo.
-    sudo chown -R www-data:www-data $DOC_ROOT
-    sudo chmod -R 755 $DOC_ROOT
+    # Clear cache after installation
+    sudo -u www-data php $DOC_ROOT/bin/console cache:clear --env=prod
 
     # Initialize Mautic database schema and create admin user
     sudo -u www-data php $DOC_ROOT/bin/console mautic:install --env=prod \
@@ -242,12 +264,17 @@ function install_mautic {
         --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
         https://$MAUTIC_DOMAIN
 
-    sudo -u www-data php /var/www/html/bin/console cache:clear --env=prod
-}
+    # Fix permissions again after installation
+    sudo chown -R www-data:www-data $DOC_ROOT
+    sudo chmod -R 755 $DOC_ROOT
 
-function configure_timezone {
-    echo "Configuring server timezone ======================================================================================================"
-    sudo timedatectl set-timezone $TIMEZONE
+    # Install Plugins
+    # sudo -u www-data composer require pabloveintimilla/mautic-amazon-ses
+    sudo -u www-data composer require pm-pmaas/etailors_amazon_ses
+
+    # Clear cache again to ensure proper operation
+    sudo -u www-data php $DOC_ROOT/bin/console cache:clear --env=prod
+    sudo -u www-data php bin/console mautic:plugins:reload
 }
 
 function configure_firewall {
@@ -285,8 +312,8 @@ configure_apache
 setup_ssl
 configure_mariadb
 install_package_managers
-install_mautic
 configure_timezone
+install_mautic
 configure_firewall
 setup_cron_jobs
 finalize_installation
