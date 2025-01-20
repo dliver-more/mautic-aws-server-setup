@@ -2,6 +2,7 @@
 # ToDo: Fix timzeone issue
 # ToDo: set mautid db on variable
 # ToDo: Let users choose which aws plugin(s) to use
+# ToDO: Check all required variables before running
 ###-----------------------------------###
 ### Mautic 5.2.1 on AWS EC2 Installer ###
 ###-----------------------------------###
@@ -270,11 +271,14 @@ function install_mautic {
 
     # Install Plugins
     # sudo -u www-data composer require pabloveintimilla/mautic-amazon-ses
-    sudo -u www-data composer require pm-pmaas/etailors_amazon_ses
+    # sudo -u www-data composer require symfony/amazon-mailer
+    cd $DOC_ROOT/plugins
+    sudo -u www-data git clone https://github.com/pm-pmaas/etailors_amazon_ses.git AmazonSesBundle
+    cd $DOC_ROOT
 
     # Clear cache again to ensure proper operation
     sudo -u www-data php $DOC_ROOT/bin/console cache:clear --env=prod
-    sudo -u www-data php bin/console mautic:plugins:reload
+    sudo -u www-data php $DOC_ROOT/bin/console mautic:plugins:reload
 }
 
 function configure_firewall {

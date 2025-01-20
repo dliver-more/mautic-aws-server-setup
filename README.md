@@ -15,6 +15,7 @@ This repository contains a shell script and detailed setup instructions to autom
 Mautic is an open-source marketing automation platform that allows businesses to manage email campaigns, create landing pages, track user behavior, and much more. It is a powerful tool for marketers looking to automate their workflows and improve user engagement.
 
 [Learn more about Mautic here.](https://www.mautic.org)
+[View the Mautic Repo here.](https://github.com/mautic/mautic)
 
 Key Features:
 - Dynamic email content and personalized campaigns.
