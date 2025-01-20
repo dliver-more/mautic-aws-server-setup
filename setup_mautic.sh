@@ -5,7 +5,7 @@
 ###-----------------------------------###
 #
 # This script installs Mautic 5.2.1 on Ubuntu 24.04 in an AWS EC2 instance.
-# It configures Apache 2, PHP 8.2, MariaDB 10.11, Snap, Certbot, and enables SSL.
+# It configures Apache 2, PHP 8.1, MariaDB 10.11, Snap, Certbot, and enables SSL.
 # Optimized for a clean and secure setup.
 #
 ## Prerequisites
@@ -33,7 +33,7 @@ MAUTIC_ADMIN_LASTNAME=${MAUTIC_ADMIN_LASTNAME:-null}  # Admin last name (Optiona
 
 # Versions. Changing these may break the installation.
 MAUTIC_VERSION="5.2.1"  # Mautic version (Required)
-PHP_VERSION="8.2"  # PHP version (Required)
+PHP_VERSION="8.1"  # PHP version (Required)
 MARIADB_VERSION="10.11"  # MariaDB version (Required)
 
 ## Variables Check
@@ -58,7 +58,8 @@ function pause_for_credentials {
 }
 
 function check_requirements {
-    echo "\nChecking server requirements..."
+    echo "\nChecking server requirements ======================================================================================================"
+    read -p "Mautic 5 requires Node and NPM, which is a resource heavy package manager. This requires greater compute power during installation. Below we will check your server settings. If you are below the recommendations, your build may not work. Press ENTER to continue."
 
     REQUIRED_DISK_SPACE=20  # GB
     REQUIRED_RAM=2  # GB
@@ -101,8 +102,39 @@ function check_requirements {
     echo "All checks completed.\n"
 }
 
+function install_dependencies {
+    echo "Updating and installing dependencies ======================================================================================================"
+
+    sudo apt update && sudo apt upgrade -y
+
+    # Add PHP repository
+    sudo add-apt-repository ppa:ondrej/php -y
+    sudo apt update
+
+    # Install PHP, MariaDB, and other necessary tools
+    sudo apt install -y mariadb-server mariadb-client apache2 snapd \
+                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap,imap,mysql,redis} \
+                   curl unzip software-properties-common
+
+    # Install and link Certbot
+    sudo snap install --classic certbot
+    sudo ln -s /snap/bin/certbot /usr/bin/certbot
+
+    # Ensure necessary directories exist
+    sudo mkdir -p $DOC_ROOT
+    sudo chown -R www-data:www-data $DOC_ROOT
+    sudo chmod -R 755 $DOC_ROOT
+
+    # Update PHP Settings
+    sudo sed -i 's/allow_url_fopen = Off/allow_url_fopen = On/' /etc/php/$PHP_VERSION/apache2/php.ini
+    sudo sed -i 's/memory_limit = 128M/memory_limit = 512M/' /etc/php/$PHP_VERSION/apache2/php.ini
+    sudo sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 200M/' /etc/php/$PHP_VERSION/apache2/php.ini
+    sudo sed -i 's/max_execution_time = 30/max_execution_time = 300/' /etc/php/$PHP_VERSION/apache2/php.ini
+    sudo sed -i 's/post_max_size = 8M/post_max_size = 64M/' /etc/php/$PHP_VERSION/apache2/php.inifile_uploads = On
+}
+
 function configure_apache {
-    echo "Configuring Apache... ======================================================================================================"
+    echo "Configuring Apache ======================================================================================================"
 
     # Ensure Apache is installed
     sudo apt install apache2 -y
@@ -112,9 +144,9 @@ function configure_apache {
 <VirtualHost *:80>
     ServerName $MAUTIC_DOMAIN
     ServerAlias www.$MAUTIC_DOMAIN
-    DocumentRoot /var/www/html
+    DocumentRoot $DOC_ROOT
 
-    <Directory /var/www/html>
+    <Directory $DOC_ROOT>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
@@ -135,44 +167,13 @@ EOF"
     sudo systemctl restart apache2
 }
 
-function install_dependencies {
-    echo "Updating and installing dependencies... ======================================================================================================"
-
-    sudo apt update && sudo apt upgrade -y
-
-    # Add PHP repository for 8.2
-    sudo add-apt-repository ppa:ondrej/php -y
-    sudo apt update
-
-    # Install PHP, MariaDB, and other necessary tools
-    sudo apt install -y mariadb-server mariadb-client apache2 snapd \
-                   php$PHP_VERSION php$PHP_VERSION-{bcmath,curl,gd,mbstring,mysql,xml,zip,cli,intl,soap,imap,mysql,redis} \
-                   curl unzip software-properties-common
-
-    # Install and link Certbot
-    sudo snap install --classic certbot
-    sudo ln -s /snap/bin/certbot /usr/bin/certbot
-
-    # Ensure necessary directories exist
-    sudo mkdir -p /var/www/html
-    sudo chown -R www-data:www-data /var/www/html
-    sudo chmod -R 755 /var/www/html
-
-    # Update PHP Settings
-    sudo sed -i 's/allow_url_fopen = Off/allow_url_fopen = On/' /etc/php/$PHP_VERSION/apache2/php.ini
-    sudo sed -i 's/memory_limit = 128M/memory_limit = 512M/' /etc/php/$PHP_VERSION/apache2/php.ini
-    sudo sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 200M/' /etc/php/$PHP_VERSION/apache2/php.ini
-    sudo sed -i 's/max_execution_time = 30/max_execution_time = 300/' /etc/php/$PHP_VERSION/apache2/php.ini
-    sudo sed -i 's/post_max_size = 8M/post_max_size = 64M/' /etc/php/$PHP_VERSION/apache2/php.inifile_uploads = On
-}
-
 function setup_ssl {
-    echo "Setting up SSL with Certbot... ======================================================================================================"
+    echo "Setting up SSL with Certbot ======================================================================================================"
     sudo certbot --apache -d $MAUTIC_DOMAIN -d www.$MAUTIC_DOMAIN --non-interactive --agree-tos --email $CERTBOT_EMAIL --no-redirect
 }
 
 function configure_mariadb {
-    echo "Configuring MariaDB... ======================================================================================================"
+    echo "Configuring MariaDB ======================================================================================================"
 
     sudo systemctl start mariadb
     sudo systemctl enable mariadb
@@ -184,17 +185,50 @@ function configure_mariadb {
     sudo mariadb -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 }
 
+function install_package_managers {
+    echo "Installing Composer and NPM ======================================================================================================"
+    # sudo apt install composer
+    ## Install Composer
+    cd ~
+    curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
+    HASH=`curl -sS https://composer.github.io/installer.sig`
+    php -r "if (hash_file('SHA384', '/tmp/composer-setup.php') === '$HASH') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+    sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+    ## Install Node/NPM
+    sudo apt remove -y nodejs npm
+    sudo apt purge -y nodejs npm
+    sudo apt autoremove -y
+
+    # Add NodeSource repository for Node.js 20
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+    # Install Node.js (npm will be installed automatically)
+    sudo apt install -y nodejs
+    sudo npm install -g npm@latest
+}
+
 function install_mautic {
-    echo "Installing Mautic..."
+    echo "Installing Mautic ======================================================================================================"
 
     sudo wget -q https://github.com/mautic/mautic/releases/download/$MAUTIC_VERSION/$MAUTIC_VERSION.zip
-    sudo unzip -q $MAUTIC_VERSION.zip -d /var/www/html
+    sudo unzip -q $MAUTIC_VERSION.zip -d $DOC_ROOT
     sudo rm $MAUTIC_VERSION.zip
-    sudo chown -R www-data:www-data /var/www/html
-    sudo chmod -R 755 /var/www/html
+
+    sudo -u www-data php /var/www/html/bin/console cache:clear --env=prod
+    
+    sudo chown -R www-data:www-data $DOC_ROOT
+    sudo chmod -R 755 $DOC_ROOT
+
+    cd $DOC_ROOT
+    sudo -u www-data composer install # Requires sudo???
+
+    # Probably not required if we do it without sudo.
+    sudo chown -R www-data:www-data $DOC_ROOT
+    sudo chmod -R 755 $DOC_ROOT
 
     # Initialize Mautic database schema and create admin user
-    sudo -u www-data php /var/www/html/bin/console mautic:install --env=prod \
+    sudo -u www-data php $DOC_ROOT/bin/console mautic:install --env=prod \
         --db_driver=pdo_mysql \
         --db_host=localhost \
         --db_port=3306 \
@@ -207,10 +241,12 @@ function install_mautic {
         --admin_firstname=$MAUTIC_ADMIN_FIRSTNAME \
         --admin_lastname=$MAUTIC_ADMIN_LASTNAME \
         https://$MAUTIC_DOMAIN
+
+    sudo -u www-data php /var/www/html/bin/console cache:clear --env=prod
 }
 
 function configure_timezone {
-    echo "Configuring server timezone... ======================================================================================================"
+    echo "Configuring server timezone ======================================================================================================"
     sudo timedatectl set-timezone $TIMEZONE
 }
 
@@ -223,8 +259,8 @@ function configure_firewall {
     sudo ufw enable
 }
 
-# function setup_cron_jobs {
-#     echo "Setting up cron jobs for database backups...======================================================================================================"
+function setup_cron_jobs {
+    echo "Setting up cron jobs for database backups ======================================================================================================"
 
     # Backup database daily and keep last 7 backups
     sudo mkdir -p /var/backups/mautic_db
@@ -248,6 +284,7 @@ install_dependencies
 configure_apache
 setup_ssl
 configure_mariadb
+install_package_managers
 install_mautic
 configure_timezone
 configure_firewall
