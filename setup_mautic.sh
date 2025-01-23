@@ -298,6 +298,22 @@ function setup_cron_jobs {
     echo "0 2 * * * root mysqldump -u root -p$MYSQL_ROOT_PASSWORD mautic > /var/backups/mautic_db/mautic_\$(date +\%F).sql && find /var/backups/mautic_db -type f -mtime +7 -exec rm {} \;" | sudo tee /etc/cron.d/mautic-backups > /dev/null
     sudo chmod 644 /etc/cron.d/mautic-backups
     sudo systemctl restart cron
+
+    read -p "You will now paste the following Mautic cronjobs in the cron. Copy the resulting items below, after pressing enter [Enter]."
+    # OP Crontabs
+    echo "
+* * * * * php $DOC_ROOT/bin/console mautic:broadcasts:send --limit=500
+* * * * * php $DOC_ROOT/bin/console mautic:campaigns:rebuild --batch-limit=100
+* * * * * php $DOC_ROOT/bin/console mautic:segment:update --batch-limit=900
+* * * * * php $DOC_ROOT/bin/console mautic:campaigns:trigger
+* * * * * php $DOC_ROOT/bin/console mautic:import --limit=500
+* * * * * php $DOC_ROOT/bin/console mautic:webhooks:process
+* * * * * php $DOC_ROOT/bin/console mautic:reports:scheduler
+    "
+    read -p "Press [Enter] when you have copied the above CRON endpoints. Then paste them in the crontab."
+
+    sudo crontab -u www-data -e
+    sudo service cron restart
 }
 
 function finalize_installation {
